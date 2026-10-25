@@ -1,67 +1,46 @@
-"""Read-only snapshot access and January-wide analysis."""
+"""January analysis, calculated from one immutable Elexon data epoch."""
 from __future__ import annotations
 
-from datetime import date, timedelta
-from contextlib import contextmanager
-from functools import lru_cache
-import json
+from datetime import timedelta
 import os
 from pathlib import Path
-import sqlite3
 
-from .analysis import assemble_replay, decision_timestamp, error_metrics
+from .analysis import assemble_replay, decision_timestamp, error_metrics, parse_publication
+from .elexon import Dataset, ElexonProvider, load_snapshot
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(os.environ.get("WIND_DATA_DIR", ROOT / "data"))
+provider = ElexonProvider(fallback_loader=lambda: load_snapshot(DATA_DIR))
 
 
-def read_metadata() -> dict:
-    return json.loads((DATA_DIR / "metadata.json").read_text())
-
-
-@contextmanager
-def connection():
-    path = DATA_DIR / "wind.sqlite"
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    result = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    result.row_factory = sqlite3.Row
-    try:
-        yield result
-    finally:
-        result.close()
-
-
-def provenance(metadata: dict) -> dict:
+def provenance(dataset: Dataset) -> dict:
+    metadata = dataset.metadata
     return {
-        "source": "Elexon Insights · WINDFOR + FUELHH",
+        "source": "Elexon Insights · WINDFOR + FUELHH" + (" · bundled fallback" if dataset.origin == "snapshot_fallback" else " · API data"),
         "description": "GB metered wind generation. This pilot covers wind forecast mismatch, not customer demand, procurement volume or financial loss.",
         "retrieved_at": metadata["retrieved_at"],
         "alignment": "Hourly forecasts are compared with the average of two complete half-hour actual MW observations. Each complete comparison represents one hour.",
         "availability_note": "Forecasts are eligible only when publishTime is at or before the decision checkpoint. Publication time is an availability proxy; recipient-specific network latency is unknown.",
-        "source_urls": metadata["source_urls"],
-        "snapshot_sha256": metadata["sqlite_sha256"],
+        "source_urls": dict(metadata["source_urls"]),
+        "snapshot_sha256": metadata.get("sqlite_sha256") if dataset.origin == "snapshot_fallback" else None,
+        "dataset_sha256": dataset.epoch,
+        "source_mode": dataset.origin,
         "units": {"generation": "MW", "mae": "MW", "rmse": "MW", "bias": "MW", "positive_error_mwh": "MWh", "net_error_mwh": "MWh"},
         "error_definition": "forecast minus actual; positive means wind was overforecast",
         "comparison_cohort": "Latest headline metrics use every complete latest/actual match. Revision changes use only hours with both forecasts and actuals; their paired MAEs and sample size are provided separately.",
     }
 
 
-@lru_cache(maxsize=1024)
-def replay(decision_date: str, cutoff: str = "09:00", publication: str | None = None) -> dict:
+def _replay(dataset: Dataset, decision_date: str, cutoff: str = "09:00", publication: str | None = None) -> dict:
     day, _ = decision_timestamp(decision_date, cutoff)
     delivery = day + timedelta(days=1)
-    lower, upper = f"{delivery.isoformat()}T00:00:00Z", f"{(delivery + timedelta(days=1)).isoformat()}T00:00:00Z"
-    with connection() as db:
-        forecasts = [dict(row) for row in db.execute("SELECT target_time,publish_time,generation FROM forecasts WHERE target_time>=? AND target_time<?", (lower, upper))]
-        actuals = {row["target_time"]: row["generation"] for row in db.execute("SELECT target_time,generation FROM actuals WHERE target_time>=? AND target_time<?", (lower, upper))}
-    result = assemble_replay(decision_date, cutoff, forecasts, actuals, publication)
-    result["provenance"] = provenance(read_metadata())
+    forecasts = dataset.forecasts_by_day.get(delivery.isoformat(), ())
+    result = assemble_replay(decision_date, cutoff, forecasts, dataset.actuals, publication)
+    result["provenance"] = provenance(dataset)
     return result
 
 
-@lru_cache(maxsize=96)
-def accuracy(cutoff: str = "09:00") -> dict:
+def _accuracy(dataset: Dataset, cutoff: str = "09:00") -> dict:
     decision_timestamp("2026-01-01", cutoff)
     days = []
     errors = []
@@ -69,7 +48,7 @@ def accuracy(cutoff: str = "09:00") -> dict:
     revision_improved = 0
     revision_compared = 0
     for day_number in range(1, 32):
-        result = replay(f"2026-01-{day_number:02d}", cutoff)
+        result = _replay(dataset, f"2026-01-{day_number:02d}", cutoff)
         latest = result["metrics"]["latest"]
         previous = result["metrics"]["previous"]
         paired = [row for row in result["series"] if row["latest"] is not None and row["previous"] is not None and row["actual"] is not None]
@@ -86,25 +65,61 @@ def accuracy(cutoff: str = "09:00") -> dict:
         {"title": "A fair test of every update", "body": f"The latest eligible revision had lower daily MAE on {revision_improved} of {revision_compared} comparable January decision days. Every revision comparison uses identical target hours.", "tone": "neutral"},
         {"title": "Wind overforecast" if positive_bias else "Wind underforecast", "body": f"Mean signed forecast error was {aggregate['bias']:,.0f} MW across {len(errors)} complete hourly comparisons. This describes wind forecast mismatch, not a purchasing recommendation." if errors else "No complete comparisons are available at this cutoff.", "tone": "neutral"},
     ]
-    return {"cutoff": cutoff, "days": days, "aggregate": aggregate, "insights": insights, "provenance": provenance(read_metadata())}
+    return {"cutoff": cutoff, "days": days, "aggregate": aggregate, "insights": insights, "provenance": provenance(dataset)}
 
 
-@lru_cache(maxsize=1)
-def metadata() -> dict:
-    stored = read_metadata()
-    month = accuracy("09:00")
+def _metadata(dataset: Dataset, month: dict | None = None) -> dict:
+    stored = dataset.metadata
+    month = month or _accuracy(dataset, "09:00")
     covered_days = [day for day in month["days"] if day["matched_hours"]]
     worst = max(covered_days, key=lambda item: item["mae"], default=None)
     return {
         "decision_dates": [f"2026-01-{day:02d}" for day in range(1, 32)],
         "min_date": "2026-01-01", "max_date": "2026-01-31",
         "default_date": "2026-01-15", "default_cutoff": "09:00",
-        "retrieved_at": stored["retrieved_at"], "source_urls": stored["source_urls"],
-        "coverage": {"expected_hours": 31 * 24, "actual_hours": stored["hourly_actual_records"], "matched_hours": month["aggregate"]["n"], "coverage_pct": month["aggregate"]["coverage_pct"], "forecast_records": stored["forecast_records"], "missing_actual_hours": stored["incomplete_actual_hours"]},
-        "notes": stored["notes"],
+        "retrieved_at": stored["retrieved_at"], "source_urls": dict(stored["source_urls"]),
+        "coverage": {"expected_hours": 31 * 24, "actual_hours": stored["hourly_actual_records"], "matched_hours": month["aggregate"]["n"], "coverage_pct": month["aggregate"]["coverage_pct"], "forecast_records": stored["forecast_records"], "missing_actual_hours": list(stored["incomplete_actual_hours"])},
+        "notes": list(stored["notes"]),
         "case_studies": [
-            {"decision_date": "2026-01-15", "title": "When newer was less accurate", "description": "Replay 15 January at 09:00, then reveal the next-day outcome. Compare both MAE and overforecast energy."},
-            *([{"decision_date": worst["decision_date"], "title": "The largest daily error", "description": "Inspect the January decision day with the greatest latest-forecast MAE at 09:00."}] if worst else []),
+            {"decision_date": "2026-01-15", "title": "When newer was less accurate", "description": "Compare the 15 January forecasts with next-day actuals, including MAE and overforecast energy."},
+            *([{"decision_date": worst["decision_date"], "title": "The largest daily error", "description": "Inspect the January decision day with the greatest latest-forecast MAE at the selected cutoff."}] if worst else []),
         ],
-        "snapshot_sha256": stored["sqlite_sha256"],
+        "snapshot_sha256": stored.get("sqlite_sha256") if dataset.origin == "snapshot_fallback" else None,
+        "dataset_sha256": dataset.epoch,
     }
+
+
+def validate_selection(decision_date: str, cutoff: str, publication: str | None = None):
+    _, at = decision_timestamp(decision_date, cutoff)
+    parse_publication(publication, at)
+
+
+def dashboard(decision_date="2026-01-15", cutoff="09:00", publication=None, force=False):
+    validate_selection(decision_date, cutoff, publication)
+    result = provider.get_dataset(force=force)
+    day = _replay(result.dataset, decision_date, cutoff, publication)
+    month = _accuracy(result.dataset, cutoff)
+    return {"replay": day, "accuracy": month, "metadata": _metadata(result.dataset, month), "data_status": result.status}
+
+
+def replay(decision_date: str, cutoff="09:00", publication=None):
+    validate_selection(decision_date, cutoff, publication)
+    result = provider.get_dataset()
+    value = _replay(result.dataset, decision_date, cutoff, publication)
+    value["data_status"] = result.status
+    return value
+
+
+def accuracy(cutoff="09:00"):
+    decision_timestamp("2026-01-01", cutoff)
+    result = provider.get_dataset()
+    value = _accuracy(result.dataset, cutoff)
+    value["data_status"] = result.status
+    return value
+
+
+def metadata():
+    result = provider.get_dataset()
+    value = _metadata(result.dataset)
+    value["data_status"] = result.status
+    return value

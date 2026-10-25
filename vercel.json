@@ -8,7 +8,7 @@
     "api/index.py": {
       "includeFiles": "{backend/**,data/wind.sqlite,data/metadata.json,frontend/dist/**}",
       "excludeFiles": "{backend/tests/**,data/raw/**,frontend/node_modules/**,frontend/src/**,docs/**,scripts/**,.github/**,**/__pycache__/**}",
-      "maxDuration": 30
+      "maxDuration": 60
     }
   },
   "rewrites": [

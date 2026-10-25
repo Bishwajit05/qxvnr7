@@ -102,3 +102,19 @@ export type Metadata = {
     description?: string;
   }[];
 };
+export type DataStatus = {
+  mode: "live_api" | "cached_api" | "snapshot_fallback";
+  retrieved_at: string;
+  last_refresh_attempt: string | null;
+  cache_expires_at: string | null;
+  stale: boolean;
+  message: string;
+  refresh_error: string | null;
+  source_urls: Record<string, string> | string[];
+};
+export type Dashboard = {
+  replay: Replay;
+  accuracy: Accuracy;
+  metadata: Metadata;
+  data_status: DataStatus;
+};

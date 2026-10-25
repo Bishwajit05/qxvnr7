@@ -12,12 +12,9 @@ import {
   Clock3,
   Download,
   ExternalLink,
-  Eye,
-  EyeOff,
   FileText,
   Info,
   Layers3,
-  LockKeyhole,
   Play,
   RefreshCw,
   ShieldCheck,
@@ -35,7 +32,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { Accuracy, Metadata, Point, Replay } from "./types";
+import type {
+  Accuracy,
+  Dashboard,
+  DataStatus,
+  Metadata,
+  Point,
+  Replay,
+} from "./types";
 
 type View = "replay" | "review";
 type Explanation = "methodology" | "mae" | "rmse" | "bias" | "shortfall";
@@ -77,8 +81,12 @@ const avg = (values: (number | null)[]) => {
   return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
 };
 
-async function readApi<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, { signal });
+async function readApi<T>(
+  path: string,
+  signal?: AbortSignal,
+  method = "GET",
+): Promise<T> {
+  const response = await fetch(path, { signal, method });
   if (!response.ok) {
     let detail = `The data service returned ${response.status}.`;
     try {
@@ -97,14 +105,15 @@ function App() {
   const [date, setDate] = useState("2026-01-15");
   const [cutoff, setCutoff] = useState("09:00");
   const [publication, setPublication] = useState<string | null>(null);
-  const [metadata, setMetadata] = useState<Metadata | null>(null);
-  const [replay, setReplay] = useState<Replay | null>(null);
-  const [accuracy, setAccuracy] = useState<Accuracy | null>(null);
-  const [revealed, setRevealed] = useState(false);
+  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const metadata = dashboard?.metadata ?? null;
+  const replay = dashboard?.replay ?? null;
+  const accuracy = dashboard?.accuracy ?? null;
   const [error, setError] = useState<string | null>(null);
-  const [reviewError, setReviewError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [reviewLoading, setReviewLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const requestSequence = useRef(0);
   const [retry, setRetry] = useState(0);
   const [explanation, setExplanation] = useState<Explanation | null>(null);
   const query = new URLSearchParams({
@@ -115,22 +124,15 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-    readApi<Metadata>("/api/metadata", controller.signal)
-      .then(setMetadata)
-      .catch(() => {
-        /* replay carries its own source provenance */
-      });
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setRevealed(false);
+    const sequence = ++requestSequence.current;
     setLoading(true);
     setError(null);
-    setReplay(null);
-    readApi<Replay>(`/api/replay?${query}`, controller.signal)
-      .then(setReplay)
+    setRefreshError(null);
+    setDashboard(null);
+    readApi<Dashboard>(`/api/dashboard?${query}`, controller.signal)
+      .then((next) => {
+        if (sequence === requestSequence.current) setDashboard(next);
+      })
       .catch((e: Error) => {
         if (e.name !== "AbortError") setError(e.message);
       })
@@ -140,35 +142,42 @@ function App() {
     return () => controller.abort();
   }, [query, retry]);
 
-  useEffect(() => {
-    if (view !== "review") return;
-    const controller = new AbortController();
-    setReviewLoading(true);
-    setReviewError(null);
-    setAccuracy(null);
-    readApi<Accuracy>(
-      `/api/accuracy?${new URLSearchParams({ cutoff })}`,
-      controller.signal,
-    )
-      .then(setAccuracy)
-      .catch((e: Error) => {
-        if (e.name !== "AbortError") setReviewError(e.message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setReviewLoading(false);
-      });
-    return () => controller.abort();
-  }, [view, cutoff, retry]);
+  const refreshFromElexon = async () => {
+    const sequence = ++requestSequence.current;
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const next = await readApi<Dashboard>(
+        `/api/refresh?${query}`,
+        undefined,
+        "POST",
+      );
+      if (sequence === requestSequence.current) {
+        setDashboard(next);
+        setError(null);
+      }
+    } catch (cause) {
+      if (sequence === requestSequence.current)
+        setRefreshError(
+          cause instanceof Error
+            ? cause.message
+            : "The data service could not be reached.",
+        );
+    } finally {
+      if (sequence === requestSequence.current) setRefreshing(false);
+    }
+  };
 
   const chooseDate = (nextDate: string) => {
+    if (refreshing || nextDate < "2026-01-01" || nextDate > "2026-01-31")
+      return;
     setDate(nextDate);
     setPublication(null);
-    setRevealed(false);
   };
   const chooseCutoff = (nextCutoff: string) => {
+    if (refreshing) return;
     setCutoff(nextCutoff);
     setPublication(null);
-    setRevealed(false);
   };
   const openReplay = (nextDate: string) => {
     chooseDate(nextDate);
@@ -197,7 +206,7 @@ function App() {
           aria-current={view === "replay" ? "page" : undefined}
         >
           <Play size={20} />
-          <span>Replay</span>
+          <span>Forecasts</span>
         </button>
         <button
           className={`rail-button ${view === "review" ? "active" : ""}`}
@@ -254,18 +263,13 @@ function App() {
                   : "THE MONTH IN PERSPECTIVE"}
               </div>
               <h1>
-                {view === "replay" ? (
-                  <>
-                    Tomorrow, with
-                    <br className="mobile-break" /> hindsight removed.
-                  </>
-                ) : (
-                  "A month of decisions. Measured."
-                )}
+                {view === "replay"
+                  ? "Wind forecasts and accuracy."
+                  : "A month of decisions. Measured."}
               </h1>
               <p>
                 {view === "replay"
-                  ? "See the wind forecast a buyer could know. Then reveal what happened."
+                  ? "Compare the wind forecast available at decision time with actual generation."
                   : "Evaluate every January decision with the same forecast selection rule."}
               </p>
             </div>
@@ -276,6 +280,14 @@ function App() {
               How this works <ArrowUpRight size={15} />
             </button>
           </div>
+
+          <DataSourceBar
+            status={dashboard?.data_status ?? null}
+            loading={loading}
+            refreshing={refreshing}
+            refreshError={refreshError}
+            onRefresh={refreshFromElexon}
+          />
 
           <section className="decision-controls" aria-label="Decision settings">
             <div className="control-label">
@@ -298,6 +310,7 @@ function App() {
                   </span>
                   <input
                     type="date"
+                    disabled={refreshing}
                     value={date}
                     min={metadata?.min_date ?? "2026-01-01"}
                     max={metadata?.max_date ?? "2026-01-31"}
@@ -315,6 +328,7 @@ function App() {
                 <input
                   aria-label="Decision cutoff in London time"
                   type="time"
+                  disabled={refreshing}
                   step="900"
                   value={cutoff}
                   onChange={(e) => {
@@ -324,7 +338,7 @@ function App() {
               </label>
             </div>
             <div className="cutoff-note">
-              <LockKeyhole size={15} />
+              <Clock3 size={15} />
               <span>
                 Only forecasts published
                 <br />
@@ -337,7 +351,7 @@ function App() {
             <>
               <div className="section-heading">
                 <div>
-                  <h2>Decision replay</h2>
+                  <h2>Forecast and actual generation</h2>
                   <span className="subtle">
                     Next-day national wind generation
                   </span>
@@ -364,6 +378,61 @@ function App() {
               ) : (
                 replay && (
                   <>
+                    <div className="section-heading accuracy-heading">
+                      <div>
+                        <h2>Forecast accuracy</h2>
+                        <span className="subtle">
+                          {`${replay.metrics.latest.n} matched hourly observations · selected forecast versus actuals`}
+                        </span>
+                      </div>
+
+                      <a
+                        className="text-button"
+                        href={`/api/replay.csv?${query}`}
+                        download
+                      >
+                        Export evaluated data <Download size={14} />
+                      </a>
+                    </div>
+                    <div className="metric-grid overview-metrics">
+                      <MetricCard
+                        label="Mean absolute error"
+                        value={number(replay.metrics.latest.mae)}
+                        unit="MW"
+                        note="Typical size of forecast error"
+                        kind="mae"
+
+                        onExplain={setExplanation}
+                      />
+                      <MetricCard
+                        label="Root mean square error"
+                        value={number(replay.metrics.latest.rmse)}
+                        unit="MW"
+                        note="Gives larger misses more weight"
+                        kind="rmse"
+
+                        onExplain={setExplanation}
+                      />
+                      <MetricCard
+                        label="Forecast bias"
+                        value={signed(replay.metrics.latest.bias)}
+                        unit="MW"
+                        note="Positive means wind was overforecast"
+                        kind="bias"
+
+                        onExplain={setExplanation}
+                      />
+                      <MetricCard
+                        label="Wind shortfall vs forecast"
+                        value={number(replay.metrics.latest.positive_error_mwh)}
+                        unit="MWh"
+                        note="Sum of positive errors over time"
+                        kind="shortfall"
+
+                        onExplain={setExplanation}
+                        accent
+                      />
+                    </div>
                     <div className="replay-layout">
                       <section
                         className="chart-card"
@@ -379,21 +448,9 @@ function App() {
                               Wind generation · GW
                             </span>
                           </div>
-                          <button
-                            className={`reveal-button ${revealed ? "revealed" : ""}`}
-                            disabled={!replay.coverage.actual_hours}
-                            onClick={() => setRevealed((value) => !value)}
-                          >
-                            {revealed ? (
-                              <EyeOff size={16} />
-                            ) : (
-                              <Eye size={16} />
-                            )}
-                            {revealed ? "Hide actuals" : "Reveal actuals"}
-                            <span className="keycap">
-                              {revealed ? <Check size={11} /> : "02"}
-                            </span>
-                          </button>
+                          <span className="actuals-badge">
+                            <ChartNoAxesCombined size={14} /> Actuals included
+                          </span>
                         </div>
                         <div className="chart-legend">
                           <span>
@@ -404,24 +461,19 @@ function App() {
                             <i className="legend-line previous" />
                             Previous forecast
                           </span>
-                          <span className={!revealed ? "legend-muted" : ""}>
-                            <i
-                              className={`legend-line actual ${!revealed ? "hidden-line" : ""}`}
-                            />
-                            {revealed ? "Actual generation" : "Actuals hidden"}
+                          <span>
+                            <i className="legend-line actual" />
+                            Actual generation
                           </span>
-                          {revealed && (
-                            <span>
-                              <i className="legend-area shortfall" />
-                              Wind below forecast
-                            </span>
-                          )}
+
+                          <span>
+                            <i className="legend-area shortfall" />
+                            Wind below forecast
+                          </span>
                         </div>
-                        {replay.coverage.forecast_hours ? (
-                          <GenerationChart
-                            points={replay.series}
-                            revealed={revealed}
-                          />
+                        {replay.coverage.forecast_hours ||
+                        replay.coverage.actual_hours ? (
+                          <GenerationChart points={replay.series} />
                         ) : (
                           <div className="empty-chart">
                             <Wind size={32} />
@@ -435,9 +487,8 @@ function App() {
                         <div className="chart-footnote">
                           <ShieldCheck size={14} />
                           <span>
-                            {revealed
-                              ? "Hindsight revealed. Actuals are shown for retrospective evaluation."
-                              : "Decision view. Future actuals are hidden from this replay."}
+                            Historical actuals are included for retrospective
+                            forecast evaluation.
                           </span>
                           <span className="coverage-pill">
                             {replay.coverage.forecast_hours} /{" "}
@@ -461,6 +512,7 @@ function App() {
                                 .map((item, index, items) => (
                                   <button
                                     key={item.publish_time}
+                                    disabled={refreshing}
                                     className={`publication-button ${item.selected ? "selected" : ""}`}
                                     onClick={() => {
                                       setPublication(
@@ -468,7 +520,6 @@ function App() {
                                           ? null
                                           : item.publish_time,
                                       );
-                                      setRevealed(false);
                                     }}
                                     aria-pressed={item.selected}
                                   >
@@ -496,76 +547,12 @@ function App() {
                       </section>
                       <DecisionBrief
                         replay={replay}
-                        revealed={revealed}
+
                         onExplain={() => setExplanation("methodology")}
                       />
                     </div>
 
-                    <div className="section-heading results-heading">
-                      <div>
-                        <h2>
-                          {revealed
-                            ? "The forecast, held to account."
-                            : "What happened comes next."}
-                        </h2>
-                        <span className="subtle">
-                          {revealed
-                            ? `${replay.metrics.latest.n} matched hourly observations · selected forecast versus actuals`
-                            : "Reveal actuals to evaluate the forecast against recorded generation."}
-                        </span>
-                      </div>
-                      {revealed && (
-                        <a
-                          className="text-button"
-                          href={`/api/replay.csv?${query}`}
-                          download
-                        >
-                          Export evaluated data <Download size={14} />
-                        </a>
-                      )}
-                    </div>
-                    <div
-                      className={`metric-grid ${!revealed ? "metrics-locked" : ""}`}
-                    >
-                      <MetricCard
-                        label="Mean absolute error"
-                        value={number(replay.metrics.latest.mae)}
-                        unit="MW"
-                        note="Typical size of forecast error"
-                        kind="mae"
-                        revealed={revealed}
-                        onExplain={setExplanation}
-                      />
-                      <MetricCard
-                        label="Root mean square error"
-                        value={number(replay.metrics.latest.rmse)}
-                        unit="MW"
-                        note="Gives larger misses more weight"
-                        kind="rmse"
-                        revealed={revealed}
-                        onExplain={setExplanation}
-                      />
-                      <MetricCard
-                        label="Forecast bias"
-                        value={signed(replay.metrics.latest.bias)}
-                        unit="MW"
-                        note="Positive means wind was overforecast"
-                        kind="bias"
-                        revealed={revealed}
-                        onExplain={setExplanation}
-                      />
-                      <MetricCard
-                        label="Wind shortfall vs forecast"
-                        value={number(replay.metrics.latest.positive_error_mwh)}
-                        unit="MWh"
-                        note="Sum of positive errors over time"
-                        kind="shortfall"
-                        revealed={revealed}
-                        onExplain={setExplanation}
-                        accent
-                      />
-                    </div>
-                    {revealed && <RevisionComparison replay={replay} />}
+                    <RevisionComparison replay={replay} />
                     <div className="case-study-strip">
                       <div>
                         <span className="small-label">
@@ -616,8 +603,8 @@ function App() {
           ) : (
             <JanuaryReview
               accuracy={accuracy}
-              loading={reviewLoading}
-              error={reviewError}
+              loading={loading}
+              error={error}
               cutoff={cutoff}
               onRetry={() => setRetry((v) => v + 1)}
               onReplay={openReplay}
@@ -642,7 +629,7 @@ function App() {
         <ExplanationDrawer
           kind={explanation}
           replay={replay}
-          revealed={revealed}
+
           metadata={metadata}
           context={view}
           accuracy={accuracy}
@@ -653,19 +640,10 @@ function App() {
   );
 }
 
-function GenerationChart({
-  points,
-  revealed,
-}: {
-  points: Point[];
-  revealed: boolean;
-}) {
+function GenerationChart({ points }: { points: Point[] }) {
   const chartPoints = points.map((point) => ({
     ...point,
-    actual: revealed ? point.actual : null,
-    error: revealed ? point.error : null,
     shortfallRange:
-      revealed &&
       point.latest != null &&
       point.actual != null &&
       point.latest > point.actual
@@ -676,7 +654,7 @@ function GenerationChart({
     <div
       className="generation-chart"
       role="img"
-      aria-label={`Hourly wind generation chart comparing selected and previous forecasts${revealed ? " with actual generation" : "; actual generation is hidden"}`}
+      aria-label="Hourly wind generation chart comparing selected and previous forecasts with actual generation"
     >
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
@@ -728,35 +706,33 @@ function GenerationChart({
                     <i className="tooltip-dot previous" />
                     Previous <b>{number(point.previous)} MW</b>
                   </div>
-                  {revealed && (
-                    <>
-                      <div>
-                        <i className="tooltip-dot actual" />
-                        Actual <b>{number(point.actual, 1)} MW</b>
-                      </div>
-                      <div className="tooltip-error">
-                        Forecast − actual <b>{signed(point.error, 1)} MW</b>
-                      </div>
-                    </>
-                  )}
+
+                  <>
+                    <div>
+                      <i className="tooltip-dot actual" />
+                      Actual <b>{number(point.actual, 1)} MW</b>
+                    </div>
+                    <div className="tooltip-error">
+                      Forecast − actual <b>{signed(point.error, 1)} MW</b>
+                    </div>
+                  </>
                   <p>Published {timeLabel(point.latest_publish_time, true)}</p>
                 </div>
               );
             }}
           />
-          {revealed && (
-            <Area
-              type="monotone"
-              dataKey="shortfallRange"
-              fill="#c49253"
-              fillOpacity={0.18}
-              stroke="none"
-              connectNulls={false}
-              isAnimationActive={false}
-              tooltipType="none"
-              activeDot={false}
-            />
-          )}
+
+          <Area
+            type="monotone"
+            dataKey="shortfallRange"
+            fill="#c49253"
+            fillOpacity={0.18}
+            stroke="none"
+            connectNulls={false}
+            isAnimationActive={false}
+            tooltipType="none"
+            activeDot={false}
+          />
           <Line
             type="monotone"
             dataKey="previous"
@@ -777,17 +753,16 @@ function GenerationChart({
             connectNulls={false}
             isAnimationActive={false}
           />
-          {revealed && (
-            <Line
-              type="monotone"
-              dataKey="actual"
-              stroke="#253d36"
-              strokeWidth={2.2}
-              dot={false}
-              connectNulls={false}
-              isAnimationActive={false}
-            />
-          )}
+
+          <Line
+            type="monotone"
+            dataKey="actual"
+            stroke="#253d36"
+            strokeWidth={2.2}
+            dot={false}
+            connectNulls={false}
+            isAnimationActive={false}
+          />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -796,11 +771,9 @@ function GenerationChart({
 
 function DecisionBrief({
   replay,
-  revealed,
   onExplain,
 }: {
   replay: Replay;
-  revealed: boolean;
   onExplain: () => void;
 }) {
   const selectedTime =
@@ -821,16 +794,8 @@ function DecisionBrief({
         <span className="small-label">DECISION BRIEF</span>
         <span className="brief-live-dot" />
       </div>
-      <h3>
-        {revealed
-          ? replay.insight.title
-          : "The information you had. Nothing from tomorrow."}
-      </h3>
-      <p>
-        {revealed
-          ? replay.insight.body
-          : "This forecast was available before your decision cutoff. Actual generation stays hidden until you choose to reveal it."}
-      </p>
+      <h3>{replay.insight.title}</h3>
+      <p>{replay.insight.body}</p>
       <div className="brief-stat">
         <span>Average forecast wind</span>
         <strong>
@@ -838,7 +803,7 @@ function DecisionBrief({
         </strong>
       </div>
       <div className="brief-detail">
-        <span>Decision locked at</span>
+        <span>Decision time</span>
         <strong>{timeLabel(replay.decision.at)} GMT</strong>
       </div>
       <div className="brief-detail">
@@ -857,7 +822,7 @@ function DecisionBrief({
         </strong>
       </div>
       <div className="brief-notice">
-        <LockKeyhole size={14} />
+        <Clock3 size={14} />
         <span>{publicationCapText(replay)}</span>
       </div>
       <button onClick={onExplain} className="brief-method-link">
@@ -877,7 +842,6 @@ function MetricCard({
   unit,
   note,
   kind,
-  revealed = true,
   onExplain,
   accent = false,
 }: {
@@ -886,7 +850,6 @@ function MetricCard({
   unit: string;
   note: string;
   kind: Explanation;
-  revealed?: boolean;
   onExplain: (kind: Explanation) => void;
   accent?: boolean;
 }) {
@@ -902,19 +865,10 @@ function MetricCard({
         </button>
       </div>
       <div className="metric-value">
-        {revealed ? (
-          <>
-            {value}
-            <span>{unit}</span>
-          </>
-        ) : (
-          <>
-            <span className="locked-dash">—</span>
-            <LockKeyhole size={16} />
-          </>
-        )}
+        {value}
+        <span>{unit}</span>
       </div>
-      <p>{revealed ? note : "Available after revealing actuals"}</p>
+      <p>{note}</p>
     </article>
   );
 }
@@ -1213,7 +1167,6 @@ function JanuaryReview({
 function ExplanationDrawer({
   kind,
   replay,
-  revealed,
   metadata,
   context,
   accuracy,
@@ -1221,7 +1174,6 @@ function ExplanationDrawer({
 }: {
   kind: Explanation;
   replay: Replay | null;
-  revealed: boolean;
   metadata: Metadata | null;
   context: View;
   accuracy: Accuracy | null;
@@ -1310,12 +1262,11 @@ function ExplanationDrawer({
   const pairedHours = monthly
     ? accuracy?.days.reduce((total, day) => total + day.paired_hours, 0)
     : replay?.coverage.paired_hours;
-  const first =
-    revealed && !monthly
-      ? replay?.series.find(
-          (point) => point.latest != null && point.actual != null,
-        )
-      : null;
+  const first = !monthly
+    ? replay?.series.find(
+        (point) => point.latest != null && point.actual != null,
+      )
+    : null;
   return (
     <div
       className="drawer-overlay"
@@ -1527,3 +1478,100 @@ function ReplaySkeleton() {
 }
 
 export default App;
+
+function DataSourceBar({
+  status,
+  loading,
+  refreshing,
+  refreshError,
+  onRefresh,
+}: {
+  status: DataStatus | null;
+  loading: boolean;
+  refreshing: boolean;
+  refreshError: string | null;
+  onRefresh: () => void;
+}) {
+  const issue = refreshError ?? status?.refresh_error;
+  const fallback = status?.mode === "snapshot_fallback";
+  const label = !status
+    ? issue
+      ? "Elexon refresh failed"
+      : "Connecting to Elexon"
+    : fallback
+      ? "Saved fallback / refresh failed"
+      : issue
+        ? "Cached Elexon response / refresh failed"
+        : status?.mode === "cached_api" || status?.stale
+          ? "Cached Elexon response"
+          : status
+            ? "Fetched from Elexon"
+            : "Connecting to Elexon";
+  const timestamp = status?.retrieved_at
+    ? new Date(status.retrieved_at).toLocaleString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+        timeZone: TZ,
+      })
+    : null;
+  return (
+    <section
+      className={`data-source-bar ${fallback || issue ? "data-source-warning" : ""}`}
+      aria-label="Elexon data source"
+    >
+      <div className="data-source-content" role="status" aria-live="polite">
+        <div className="data-source-title">
+          <span className="status-dot" />
+          <strong>
+            {refreshing
+              ? "Refreshing from Elexon…"
+              : loading
+                ? "Fetching January 2026 data…"
+                : label}
+          </strong>
+          <span className="historical-tag">JANUARY 2026 · HISTORICAL</span>
+        </div>
+        <div className="data-source-meta">
+          {timestamp ? (
+            <>
+              <time dateTime={status!.retrieved_at}>
+                Fetched {timestamp} GMT
+              </time>
+              <span>
+                {fallback
+                  ? "Saved snapshot; refresh unavailable"
+                  : "5 minute server cache"}
+              </span>
+            </>
+          ) : (
+            <span>
+              {loading
+                ? "Loading forecasts and actual generation from the data service."
+                : "No dataset loaded. Retry or refresh from Elexon."}
+            </span>
+          )}
+        </div>
+        {(issue || (status?.stale && status.message)) && (
+          <p className="data-source-error" role="alert">
+            {issue
+              ? `Refresh failed: ${issue}. ${!status ? "No dataset is available." : fallback ? "Showing the saved fallback." : "Showing the last successful Elexon dataset."}`
+              : status?.message}
+          </p>
+        )}
+      </div>
+      <button
+        className="refresh-button"
+        onClick={onRefresh}
+        disabled={loading || refreshing}
+      >
+        <RefreshCw size={15} className={refreshing ? "is-spinning" : ""} />
+        {refreshing ? "Refreshing…" : "Refresh from Elexon"}
+      </button>
+    </section>
+  );
+}

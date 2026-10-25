@@ -10,8 +10,17 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import service
+from .elexon import DataUnavailable
 
 app = FastAPI(title="Wind Decision Replay", description="Traceable historical wind forecast decisions for January 2026", version="1.0.0")
+
+
+@app.middleware("http")
+async def no_http_cache(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 def handle(call, *args):
@@ -21,14 +30,25 @@ def handle(call, *args):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail="The historical snapshot is unavailable. Run scripts/import_data.py before starting the application.") from exc
+    except DataUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/health")
 def health():
     ready = (service.DATA_DIR / "wind.sqlite").is_file() and (service.DATA_DIR / "metadata.json").is_file()
-    if not ready:
-        raise HTTPException(status_code=503, detail="Historical snapshot unavailable")
-    return {"status": "ok", "dataset": "january-2026", "read_only": True}
+    current = service.provider.peek_status()
+    return {"status": "ok", "dataset": "january-2026", "read_only": True, "data_provider": "elexon_api", "upstream_checked": bool(current and current["last_refresh_attempt"]), "fallback_available": ready, "data_status": current}
+
+
+@app.get("/api/dashboard")
+def get_dashboard(decision_date: str = Query("2026-01-15"), cutoff: str = Query("09:00"), publication: str | None = None):
+    return handle(service.dashboard, decision_date, cutoff, publication, False)
+
+
+@app.post("/api/refresh")
+def refresh_dashboard(decision_date: str = Query("2026-01-15"), cutoff: str = Query("09:00"), publication: str | None = None):
+    return handle(service.dashboard, decision_date, cutoff, publication, True)
 
 
 @app.get("/api/replay")

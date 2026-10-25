@@ -1,38 +1,43 @@
-# Nine minute demo script
+# Local demo script for the API refresh workflow
 
-Record one unlisted YouTube video with a customer presentation followed by a technical review. Target nine minutes so pauses and transitions remain inside the ten-minute assignment limit. Keep each part below five minutes. This is a prepared script; recording and upload are still required.
+Prepare a two-part local video, targeting eight to nine minutes in total and keeping each overview below five minutes. The candidate has requested that the video stay local. Do not upload it or submit the form as part of regeneration.
 
-Before recording, run the app, select a date with complete source coverage, and inspect the actual results. Replace bracketed prompts below with verified numbers shown by the dashboard. Do not invent performance figures or procurement savings.
+The existing 8:42 MP4 demonstrates the earlier workflow and is obsolete for this revision. This script and `demo/chapters.json` describe the revised application. Record new captures only after real API retrieval, source status, immediate results, cache reuse, and manual refresh have been verified. The old screenshots and hardcoded technical panels in the video builder also need replacement or revision before rendering.
 
-The packaged snapshot provides a useful example: **15 January at 09:00 London time, for 16 January delivery**. At midnight delivery, the selected forecast is 7,398 MW, the recorded hourly actual is 7,335.5 MW, and the error is +62.5 MW. Across all 24 delivery hours, selected MAE is 782.75 MW versus 736.29 MW for the previous revisions: the latest revision has **6.3% higher MAE**, improving eight hours and worsening sixteen. Its positive-error energy is nevertheless lower, 13,616.5 MWh versus 14,548 MWh. This illustrates that different error measures answer different questions. These values were checked against the packaged snapshot; confirm them again if the data is refreshed.
+## Part one Customer presentation 0:00 to 4:15
 
-## Part one Customer presentation 0:00 to 4:30
-
-| Time | Screen action | Narration |
+| Time | Screen action | Narration focus |
 | --- | --- | --- |
-| 0:00–0:40 | Show the dashboard and January decision controls. | “This pilot helps your day-ahead buying team answer two questions: what wind forecast was available when you had to decide, and how reliable was it? We use Elexon's wind forecasts and recorded generation to replay those decisions.” |
-| 0:40–1:30 | Select the chosen January decision date and 09:00 London time. Point out the next-day delivery date and publication information. | “This is a historical decision on [date]. The forecast covers tomorrow's delivery. Only publications available by this selected time qualify. The default time is a demonstration assumption that your team's operating process can configure.” |
-| 1:30–2:20 | Explain the forecast and actual lines, then inspect an hour with a visible error. | “The forecast showed [verified MW] and the later recorded value was [verified MW]. The signed error tells us whether wind was over- or underforecast. This gives a concrete view of the uncertainty that a buying team faces.” |
-| 2:20–3:10 | Show MAE, RMSE, bias, and coverage. | “Average absolute error describes a typical miss, while RMSE makes large misses more visible. Bias shows the direction of errors. Coverage tells us how much data supports these statistics; missing observations never become zeroes.” |
-| 3:10–4:00 | Open the forecast revision comparison and point out its common matched hours. | “Here we compare the latest eligible forecast with the previous eligible revision for each delivery hour. Both are evaluated on the same hours, so a change in coverage cannot masquerade as an improvement. On this example, the measured change is [verified result]. We can also replay earlier publication checkpoints.” |
-| 4:00–4:30 | Return to the overall dashboard or methodology information. | “The result is an auditable view of wind expectations and uncertainty. This pilot uses GB metered wind data. Adding your demand and contracted positions would be a separate next step before calculating your own procurement volume.” |
+| 0:00–0:45 | Open the dashboard at 15 January 2026, 09:00 London time. | Explain the buying team's two questions: what wind forecast was available, and how accurate was it? Point out that forecast, actuals, and accuracy are already visible after loading. |
+| 0:45–1:25 | Inspect the selected publication and move to an earlier eligible checkpoint. | The latest publication at or before the historical cutoff is chosen for each target hour. Freshly retrieving data today never permits later publications into an earlier decision. The default cutoff is a demonstration assumption. |
+| 1:25–2:15 | Hover an hourly comparison and show the metric explanations. | Explain forecast minus actual, MAE, RMSE, bias, complete half-hour alignment, and MW versus MWh. The analysis concerns wind mismatch rather than a utility's exact procurement volume. |
+| 2:15–3:00 | Inspect the revision comparison and its paired sample size. | Compare selected and previous forecasts on identical hours. Use the verified displayed values; do not assume a newer revision improves every measure. |
+| 3:00–3:40 | Click Refresh and show the resulting source status and retrieval time. | A manual refresh attempts real Elexon requests. Distinguish successful API retrieval, cached API data, and an explicitly labelled fallback. Explain a stale/error state if it actually occurs. |
+| 3:40–4:15 | Open January review and inspect an early cutoff with partial coverage. | The month retains January decision dates with next-day delivery through 1 February. Missing hours stay missing, and revision charts compare the common cohort. |
 
-## Part two Technical review 4:30 to 9:00
+## Part two Technical review 4:15 to 8:45
 
-| Time | Screen action | Narration |
+| Time | Screen action | Narration focus |
 | --- | --- | --- |
-| 4:30–5:10 | Show the README architecture diagram. | “The app has a React and TypeScript frontend, a Python FastAPI backend, and a read-only SQLite snapshot. An offline importer retrieves the two allowed Elexon datasets. A single Docker command runs the complete local application.” |
-| 5:10–5:55 | Show the importer and `data/metadata.json`. | “Forecast queries use publication windows. We retain revisions and separately filter delivery times. Metadata preserves the source requests, retrieval timestamps, record counts, and checksums. January decision dates produce next-day delivery from 2 January through 1 February.” |
-| 5:55–6:45 | Show the forecast-selection function and its cutoff test. | “The backend selects the latest publication at or before the decision timestamp for each target hour. This test prevents future information from leaking into an earlier decision. UTC timestamps are stored consistently, and the interface labels the London decision time.” |
-| 6:45–7:30 | Show alignment and metric logic, then related tests. | “Forecasts are hourly. We require two half-hour actuals and average their MW values for comparison. Missing hours stay unavailable. Error is forecast minus actual, and revision scores use a shared cohort. The tests cover those definitions and boundary conditions.” |
-| 7:30–8:15 | Show frontend components, API contract, and CI checks. | “The frontend requests selected results and renders charts, metrics, and coverage. Calculations stay in Python. The build checks TypeScript, while CI also runs backend tests. Loading and error states explain problems without fabricating data.” |
-| 8:15–9:00 | Show Docker, Vercel configuration, and live application. | “Docker builds the frontend and runs the Python app. Vercel hosts the built frontend and the same ASGI app as a Python function, with the snapshot included. The public links have been checked while signed out [say this only after verification]. AI assistance is disclosed in the README. The main tradeoff is a fixed historical snapshot, appropriate to this pilot's scope and time limit.” |
+| 4:15–5:00 | Show the revised architecture and dashboard API response. | React renders one FastAPI response containing the selected decision, January metrics, metadata, and source status from one dataset epoch. Python owns calculations. |
+| 5:00–5:50 | Show the API provider and a real request's provenance. | Retrieve only the two permitted Elexon datasets, with historical publication and delivery bounds. A successful normalized dataset is cached in memory for 300 seconds per instance. |
+| 5:50–6:35 | Show refresh and failure-handling tests. | Forced refresh bypasses the cache interval. A failed refresh preserves the last-good dataset and original retrieval time, marks it stale, and records the failure. With no successful API data, fallback is explicit and retains its original provenance. |
+| 6:35–7:20 | Show cutoff, alignment, and cohort logic plus their tests. | Exclude future publications; require two actual half-hours; distinguish missing from zero; compute revision changes from the same hours; preserve the January-to-February boundary. |
+| 7:20–8:05 | Show frontend interaction tests and CI results. | Verify immediate actuals and metrics, no reveal workflow, refresh loading/error state, Python tests, frontend tests, TypeScript, and production build. Mention only checks that have executed successfully. |
+| 8:05–8:45 | Show Docker, Vercel configuration, and the deployed app. | Docker runs the complete local application. Vercel serves the frontend and the same ASGI app, with a 60-second configured function duration. Its cache is instance-local and disposable. Explain the January scope, source limits, AI disclosure, and local-only video status. |
+
+## Numerical reference case
+
+The bundled reference snapshot contains this example: 15 January at 09:00 London time for 16 January delivery. At midnight, selected forecast is 7,398 MW, hourly actual is 7,335.5 MW, and signed error is +62.5 MW. The 24-hour selected MAE is 782.75 MW, compared with 736.29 MW for previous revisions, or 6.3% higher. Eight hours improve and sixteen worsen. Positive-error energy is nevertheless lower: 13,616.5 MWh versus 14,548 MWh.
+
+These are reference-snapshot values, not a guarantee about a new API retrieval. Recheck every narrated number against the response used for the final captures, because upstream historical records may have been revised.
 
 ## Recording checks
 
-- Close private tabs and notifications before screen recording.
-- Use a readable zoom level and a microphone with clear audio.
-- Keep narration grounded in results actually visible in this build.
-- Do not expose account credentials or deployment tokens.
-- Upload as **Unlisted**, then open the YouTube link in an incognito window.
-- Add the verified video URL to the README and submission checklist.
+- Use real captures of the revised running application, including a completed manual refresh and its source status.
+- Capture the provider and unified endpoint rather than presenting the offline fallback importer as the normal runtime architecture.
+- Replace the builder's obsolete architecture and delivery panels before generating a new video.
+- Do not simulate an upstream failure without clearly labelling it as a controlled demonstration.
+- Keep source labels, retrieval times, stale/error states, units, and cohort sizes readable.
+- Watch the complete regenerated MP4 and verify its actual total and part durations.
+- Keep the MP4, captions, and personal submission details local. No upload or form submission is requested.
