@@ -23,9 +23,16 @@ The candidate requested immediate access to actuals and accuracy, real Elexon AP
 - The API provider makes real upstream requests, uses a 300-second cache per Python instance, and supports forced refresh through `POST /api/refresh`.
 - Successful API retrieval, cached data, stale last-good data after failure, and bundled snapshot fallback must be distinguishable. A failed refresh must not claim a new successful retrieval time.
 - Vercel's configured function maximum duration is now 60 seconds. CI includes the frontend interaction test command in addition to Python tests and the production build.
-- README and narration sources have been updated. The existing 8:42 video still shows the earlier workflow and must not be presented as a demonstration of this revision.
+- Updated README, source preview, narration, architecture panels, and local version 2 video for the new workflow; the earlier video is preserved separately.
 
-Validation of the revised application, live API requests, cache and failure handling, Docker build, production deployment, and regenerated local video remains to be recorded after those checks execute. Earlier test counts and deployment checks apply to the earlier release only.
+Revision verified on 25 October 2026 at 16:38 IST:
+
+- 37 backend tests and 8 frontend interaction tests pass. The Linux Docker backend checks and GitHub CI also pass.
+- Initial requests call the two official Elexon APIs. The local initial fetch took 1.88 seconds; a cached request took 0.02 seconds; forced refresh took 1.91 seconds.
+- The public production refresh returned live_api, advanced the successful retrieval timestamp, and provided daily, monthly, and metadata results from the same immutable dataset. Both API datasets supplied all 744 complete delivery hours at the default cutoff.
+- Actuals, all accuracy cards, revision comparisons, and CSV are immediately visible. Browser checks confirmed zero reveal controls and successful Refresh on the live site.
+- Mobile and tablet layouts were inspected at 390 and 768 pixels with no page overflow.
+- The regenerated local version 2 demo is 8:02; customer and technical parts are 3:48 and 4:14. Full audio/video decoding and caption/frame checks passed. No upload was performed.
 
 ## Remaining submission items
 

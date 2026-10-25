@@ -1,19 +1,27 @@
-# Narrated application walkthrough
+# Local narrated application walkthrough
 
-This pipeline creates a maximum ten-minute, two-part MP4 using screenshots of the running application and excerpts from the actual repository. The narration uses the macOS Daniel synthetic voice; it does not impersonate the candidate. The customer and technical parts must each remain below five minutes.
+The current version is `../deliverables/wind-decision-replay-demo-v2.mp4`. It describes immediate actuals and accuracy, real Elexon API retrieval, a 300-second instance cache, manual Refresh, one dataset epoch, and explicit stale/fallback status. The earlier MP4 is preserved as an obsolete version.
 
-The narration text is in `chapters.json` and generated chapter files under `narration/`. Review the text against the current snapshot before publishing. This is a narrated walkthrough of captured application states, rather than a continuous live screen recording.
+The video stays local at the candidate's request. No YouTube upload or submission is performed by this pipeline. It uses screenshots captured from the running application and excerpts from the actual source; it is not a continuous screen recording. The macOS Daniel synthetic narration is disclosed and does not impersonate the candidate.
 
-## Build
+## Build version two
 
-Install Pillow and imageio-ffmpeg in the Python environment. On macOS, run:
+Use a Python environment with Pillow, imageio-ffmpeg, and the backend requirements installed. Install frontend dependencies first. macOS `say` supplies the narration.
 
 ```sh
-python demo/build_video.py --screenshots ../deliverables/screenshots
+python demo/build_video.py --screenshots ../deliverables/screenshots-v2 --output ../deliverables/wind-decision-replay-demo-v2.mp4
 ```
 
-Required actual application captures are `01-overview.png`, `02-outcome.png`, `03-explain.png`, `04-month.png`, `05-partial.png`, `06-chart.png`, and `07-metrics.png`. The partial capture shows a midnight decision cutoff with incomplete forecast coverage; the chart capture shows the publication timeline before revealing actuals. A viewport near 1920 by 1080 is recommended. The builder stops rather than fabricating missing screenshots.
+Required new captures are `01-overview.png`, `02-outcome.png`, `03-explain.png`, `04-month.png`, `05-partial.png`, `06-chart.png`, and `07-metrics.png`. The builder never falls back to the previous capture directory. It stops if any required capture is missing.
 
-The output is `../deliverables/wind-decision-replay-demo.mp4`, with an SRT caption file and a manifest containing chapter timestamps and part durations. MP4 captions are selectable. Intermediate chapter audio, frames, and segments are under `../deliverables/video-build/` and should not be committed to the public repository.
+Chapter text is read from `chapters.json`; generated narration and audio live in the version-specific build directory under deliverables. Changed text generates new audio. Architecture panels describe real API retrieval as the normal path and SQLite as an explicit upstream-failure fallback. Code panels read the provider, analysis, and Docker source. The verification panel executes both backend and frontend checks and preserves their output.
 
-The technical test panel runs the backend tests during the build and preserves the executed output. Source panels read the current importer, analysis code, and Dockerfile. The final MP4 should be watched before uploading to YouTube as unlisted. Upload and public access verification are separate steps.
+## Local outputs
+
+- `wind-decision-replay-demo-v2.mp4`: H.264 1080p video with AAC narration, chapter metadata, and selectable captions.
+- `wind-decision-replay-demo-v2.srt`: sidecar captions.
+- `wind-decision-replay-demo-v2-manifest.json`: measured chapter and part durations.
+- `wind-decision-replay-demo-v2-description.txt`: local description and chapter timestamps.
+- `video-qa-v2/`: decode report, sampled frames, embedded caption extraction, and inspection notes.
+
+Both parts must remain below five minutes, and the total below ten minutes. The current narration and scenes total approximately eight minutes and two seconds: about three minutes forty-eight seconds for the customer presentation and four minutes fourteen seconds for the technical review. Check the final encoded duration in the QA report. The generated video, raw captures, and intermediate audio stay outside the public source repository.

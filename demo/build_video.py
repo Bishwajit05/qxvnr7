@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a narrated 1080p walkthrough from real app captures and source excerpts.
 
-macOS: python demo/build_video.py --screenshots ../deliverables/screenshots
+macOS: python demo/build_video.py --screenshots ../deliverables/screenshots-v2
 Requires Pillow, imageio-ffmpeg (or --ffmpeg), and macOS `say`.
 No screen is fabricated. Missing required captures stop the build.
 """
@@ -88,7 +88,7 @@ def screenshot_frame(chapter, index, count, path):
 def architecture_frame(chapter, index, count):
     image = base(chapter,index,count)
     draw = ImageDraw.Draw(image)
-    items = [("ELEXON", "WINDFOR + FUELHH", "The two permitted sources"), ("PYTHON IMPORT", "Daily historical windows", "Retries, cache, deduplication"), ("SQLITE", "Immutable snapshot", "Revisions + complete actuals"), ("FASTAPI", "Selection + analysis", "One source of calculations"), ("REACT", "Decision replay", "Charts, coverage, evidence")]
+    items = [("ELEXON API", "WINDFOR + FUELHH", "Two real historical requests"), ("PYTHON PROVIDER", "Fetch + normalize", "Parallel requests, bounded retries"), ("MEMORY CACHE", "300 seconds / instance", "Refresh bypasses the interval"), ("FASTAPI", "One dataset epoch", "Decision, month, metadata, status"), ("REACT", "Immediate evidence", "Forecasts, actuals and accuracy")]
     for number, (title, line, detail) in enumerate(items):
         x = 52 + number*374
         draw.rounded_rectangle((x,330,x+322,595),radius=20,fill=WHITE,outline="#d6e0e2",width=2)
@@ -98,9 +98,10 @@ def architecture_frame(chapter, index, count):
         if number<4:
             draw.line((x+330,461,x+366,461),fill=TEAL,width=5)
             draw.polygon([(x+366,461),(x+353,452),(x+353,470)],fill=TEAL)
-    text(draw,(64,722),"Offline import. Read-only historical data. Calculations stay in Python.",36,DARK)
-    text(draw,(64,795),"One Docker image packages the React build, API, and data snapshot.",30,MUTED)
-    text(draw,(64,886),"January decision dates lead to delivery from 2 January to 1 February 2026",28,TEAL)
+    text(draw,(64,706),"Real API data is primary. Calculations stay in Python.",36,DARK)
+    text(draw,(64,780),"On upstream failure: retain the last good API epoch, or label the bundled fallback.",29,MUTED)
+    text(draw,(64,859),"SQLite is an explicit failure fallback. It is not the normal data source.",29,TEAL)
+    text(draw,(64,922),"January decision dates lead to delivery from 2 January to 1 February 2026",26,MUTED)
     return image
 
 
@@ -139,15 +140,28 @@ def tests_frame(chapter,index,count,workspace):
     env={**os.environ,"PYTHONDONTWRITEBYTECODE":"1"}
     completed=run([interpreter,"-m","pytest","backend/tests","-q","-p","no:cacheprovider"],cwd=ROOT,env=env,capture_output=True,text=True)
     (workspace/"executed-test-output.txt").write_text(completed.stdout+completed.stderr)
-    draw.rounded_rectangle((52,210,1868,500),radius=20,fill=DARK)
-    text(draw,(88,249),"$ python -m pytest backend/tests -q",30,"#a3dacf",mono=True)
+    draw.rounded_rectangle((52,198,1868,477),radius=20,fill=DARK)
+    text(draw,(88,234),"$ python -m pytest backend/tests -q",30,"#a3dacf",mono=True)
     output=completed.stdout.splitlines()
     summary=next((line for line in output if re.search(r"\d+ passed",line)),"Executed checks completed successfully")
-    text(draw,(88,340),output[0] if output else "",23,WHITE,mono=True)
-    text(draw,(88,405),summary,28,"#a3dacf",mono=True)
-    tests=[("Availability","Future exclusion and exact cutoff"),("Alignment","Two complete half-hours; missing is not zero"),("Fairness","Same target hours for revision comparisons"),("Boundaries","31 January decision to 1 February delivery"),("Evidence","Verified case, API, CSV and pooled metrics")]
+    text(draw,(88,324),output[0] if output else "",23,WHITE,mono=True)
+    text(draw,(88,397),summary,28,"#a3dacf",mono=True)
+    node=Path("/Users/bishwajit/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node")
+    node=str(node) if node.exists() else shutil.which("node")
+    if not node:
+        raise RuntimeError("Node.js is required to execute the frontend interaction checks.")
+    frontend=run([node,ROOT/"frontend"/"node_modules"/"vitest"/"vitest.mjs","run","--cache=false","--fsModuleCache=false","--attachmentsDir",workspace/"frontend-attachments"],cwd=ROOT/"frontend",env={**env,"CI":"1","NO_COLOR":"1"},capture_output=True,text=True)
+    frontend_output=re.sub(r"\x1b\[[0-9;]*m","",frontend.stdout+frontend.stderr)
+    (workspace/"executed-frontend-test-output.txt").write_text(frontend_output)
+    frontend_summary=next((line.strip() for line in frontend_output.splitlines() if re.search(r"Tests\s+\d+ passed",line)),"Frontend interaction checks completed successfully")
+    files_summary=next((line.strip() for line in frontend_output.splitlines() if "Test Files" in line),"")
+    draw.rounded_rectangle((52,507,1868,745),radius=20,fill=DARK)
+    text(draw,(88,541),"$ vitest run",30,"#a3dacf",mono=True)
+    text(draw,(88,614),files_summary,25,WHITE,mono=True)
+    text(draw,(88,674),frontend_summary,28,"#a3dacf",mono=True)
+    tests=[("Domain rules","Publication cutoff, complete actuals, common cohorts"),("API provider","Cache reuse, forced refresh, concurrency and failure"),("User workflow","Immediate actuals, accuracy and visible refresh state")]
     for i,(heading,body) in enumerate(tests):
-        y=560+i*76
+        y=790+i*65
         text(draw,(86,y),heading,28,TEAL)
         text(draw,(422,y),body,28,DARK)
     return image
@@ -166,10 +180,10 @@ def delivery_frame(chapter,index,count):
                 text(draw,(82,y),portion,20,"#edf4f4",mono=True)
                 y+=26
     text(draw,(1225,238),"Reviewable delivery",37,TEAL)
-    bullets=["React + Python application", "Reproducible data import", "Read-only historical snapshot", "Automated analysis checks", "Docker execution", "README and AI disclosure"]
+    bullets=["Immediate actuals + accuracy", "Two real Elexon API requests", "300 second instance cache", "Manual Refresh", "Explicit stale / fallback status", "Docker + Vercel deployment"]
     for i,line in enumerate(bullets):
         text(draw,(1232,337+i*80),f"{i+1:02d}  {line}",27,DARK,width=610)
-    text(draw,(1230,858),"Fixed historical scope is deliberate.",27,MUTED,width=570)
+    text(draw,(1230,858),"January 2026 scope. This video stays local.",27,MUTED,width=570)
     return image
 
 
@@ -199,8 +213,8 @@ def caption_chunks(narration):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--screenshots",type=Path,default=ASSIGNMENT/"deliverables"/"screenshots")
-    parser.add_argument("--output",type=Path,default=ASSIGNMENT/"deliverables"/"wind-decision-replay-demo.mp4")
+    parser.add_argument("--screenshots",type=Path,default=ASSIGNMENT/"deliverables"/"screenshots-v2")
+    parser.add_argument("--output",type=Path,default=ASSIGNMENT/"deliverables"/"wind-decision-replay-demo-v2.mp4")
     parser.add_argument("--ffmpeg")
     parser.add_argument("--voice",default="Daniel")
     parser.add_argument("--rate",type=int,default=156)
@@ -209,9 +223,9 @@ def main():
     args=parser.parse_args()
     chapters=json.loads((ROOT/"demo"/"chapters.json").read_text())
     args.output.parent.mkdir(parents=True,exist_ok=True)
-    workspace=args.output.parent/"video-build"
+    workspace=args.output.parent/f"{args.output.stem}-build"
     workspace.mkdir(exist_ok=True)
-    narration_dir=ROOT/"demo"/"narration"
+    narration_dir=workspace/"narration"
     narration_dir.mkdir(exist_ok=True)
     for chapter in chapters:
         path=narration_dir/f"{chapter['id']}.txt"
@@ -253,6 +267,11 @@ def main():
     captions=[]
     manifest=[]
     for index,chapter in enumerate(chapters,1):
+        chapter=dict(chapter)
+        if chapter["id"]=="04-revision-evidence" and not chapter.get("visual_alt"):
+            # The overview proves immediate cards/status; the chart capture also
+            # exposes the 6.3% revision result and its 24-hour comparison cohort.
+            chapter.update(visual_alt="06-chart.png",switch_fraction=0.25)
         print(f"Building chapter {index}/{len(chapters)}: {chapter['title']}",flush=True)
         audio=workspace/f"{chapter['id']}.aiff"
         narration=narration_dir/f"{chapter['id']}.txt"
@@ -266,7 +285,7 @@ def main():
         elif visual=="architecture":
             frame=architecture_frame(chapter,index,len(chapters))
         elif visual=="importer":
-            frame=code_frame(chapter,index,len(chapters),ROOT/"scripts"/"import_data.py",'    if kind == "WINDFOR":',"    for attempt in range(5):",[("Historical queries","Publication windows preserve revisions."),("Complete actuals","Both half-hour values must exist."),("Provenance","Source requests, counts, retrieval times and hashes.")])
+            frame=code_frame(chapter,index,len(chapters),ROOT/"backend"/"app"/"elexon.py",'    def _upstream(self):',"    def peek_status(self):",[("Two real API requests","Forecasts and actuals are fetched in parallel."),("300 second cache","Manual Refresh bypasses the interval."),("Honest failure state","Keep last good data; label any bundled fallback.")])
         elif visual=="selection":
             frame=code_frame(chapter,index,len(chapters),ROOT/"backend"/"app"/"analysis.py","    matched = [row for row in series",'    if change is not None and change > 0:',[("No look-ahead","Only published information enters the replay."),("Shared cohort","Both revisions are measured on the same target hours."),("Headline accuracy","All complete selected/actual matches remain visible.")])
         elif visual=="tests":
@@ -294,7 +313,7 @@ def main():
             span=audio_duration*len(chunk.split())/total_weight
             captions.append((caption_at,caption_at+span,chunk))
             caption_at+=span
-        manifest.append({"chapter":chapter["id"],"part":chapter["part"],"title":chapter["title"],"start_seconds":round(elapsed,3),"duration_seconds":round(clip_duration,3),"visual":visual})
+        manifest.append({"chapter":chapter["id"],"part":chapter["part"],"title":chapter["title"],"start_seconds":round(elapsed,3),"duration_seconds":round(clip_duration,3),"visual":visual,"visual_alt":chapter.get("visual_alt")})
         elapsed+=clip_duration
         part_lengths[chapter["part"]]+=clip_duration
     if elapsed>600 or any(value>300 for value in part_lengths.values()):
@@ -307,13 +326,13 @@ def main():
     ffmetadata.write_text(";FFMETADATA1\ntitle=Wind Decision Replay\ncomment=Actual application captures and source excerpts with disclosed synthetic narration.\n"+"".join(f"[CHAPTER]\nTIMEBASE=1/1000\nSTART={round(item['start_seconds']*1000)}\nEND={round((item['start_seconds']+item['duration_seconds'])*1000)}\ntitle=Part {item['part']} - {item['title']}\n" for item in manifest))
     run([ffmpeg,"-hide_banner","-loglevel","error","-y","-f","concat","-safe","0","-i",concat,"-i",caption_path,"-i",ffmetadata,"-map","0:v","-map","0:a","-map","1:0","-map_metadata","2","-map_chapters","2","-c:v","copy","-c:a","copy","-c:s","mov_text","-metadata:s:s:0","language=eng","-movflags","+faststart",args.output])
     report={"output":str(args.output),"duration_seconds":round(elapsed,3),"part_durations_seconds":part_lengths,"words":total_words,"voice":args.voice,"speech_rate":args.rate,"synthetic_narration":True,"created_at":datetime.now(timezone.utc).isoformat(),"chapters":manifest}
-    (args.output.parent/"video-manifest.json").write_text(json.dumps(report,indent=2)+"\n")
+    args.output.with_name(f"{args.output.stem}-manifest.json").write_text(json.dumps(report,indent=2)+"\n")
     chapter_lines=[]
     for item in manifest:
         seconds=int(item["start_seconds"])
         chapter_lines.append(f"{seconds//60:02d}:{seconds%60:02d} {item['title']}")
-    description="Wind Decision Replay\n\nA historical wind forecast pilot for a UK electricity buying team. The first part demonstrates the customer workflow; the second explains the architecture, data rules, calculations, and verification.\n\n"+"\n".join(chapter_lines)+"\n\nThe walkthrough uses screenshots of the running React and Python application and actual repository source excerpts. Narration is generated using the macOS Daniel synthetic voice. AI assistance is disclosed in the repository README.\n\nData: Elexon WINDFOR forecasts and FUELHH WIND actuals. January 2026 decision dates; next-day delivery from 2 January to 1 February. This pilot evaluates wind forecast mismatch, not customer demand, procurement requirements, or financial profit.\n"
-    (args.output.parent/"youtube-description.txt").write_text(description)
+    description="Wind Decision Replay — local walkthrough version 2\n\nA historical wind forecast pilot for a UK electricity buying team. Actuals and accuracy are immediately visible. The provider fetches the two real Elexon APIs, uses a 300 second instance cache, supports manual Refresh, and labels stale or bundled fallback data explicitly. The first part demonstrates the customer workflow; the second explains the architecture, data rules, calculations, and verification.\n\n"+"\n".join(chapter_lines)+"\n\nThe walkthrough uses screenshots of the running React and Python application and actual repository source excerpts. Narration is generated using the macOS Daniel synthetic voice. AI assistance is disclosed in the repository README. The video remains local; it has not been uploaded or submitted.\n\nData: Elexon WINDFOR forecasts and FUELHH WIND actuals. January 2026 decision dates; next-day delivery from 2 January to 1 February. This pilot evaluates wind forecast mismatch, not customer demand, procurement requirements, or financial profit.\n"
+    args.output.with_name(f"{args.output.stem}-description.txt").write_text(description)
     print(json.dumps(report,indent=2),flush=True)
 
 

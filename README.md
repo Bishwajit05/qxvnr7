@@ -4,13 +4,13 @@ A historical dashboard for a UK utility's day-ahead electricity buying team. Cho
 
 The pilot uses only Elexon's `WINDFOR` forecasts and `FUELHH` wind actuals. It supports a purchasing discussion with measured forecast errors; it does not calculate a utility's exact purchases, customer demand, or financial exposure.
 
-**Application:** [wind-decision-replay.vercel.app](https://wind-decision-replay.vercel.app). The updated API refresh workflow must be verified on the next production deployment; the prior release was accessible without login.
+**Live application:** [wind-decision-replay.vercel.app](https://wind-decision-replay.vercel.app). Actuals and accuracy are visible immediately. Initial API retrieval, five-minute caching, and forced refresh have been verified on the public deployment without credentials.
 
 **Repository:** [Bishwajit05/qxvnr7](https://github.com/Bishwajit05/qxvnr7).
 
-**Local video:** the existing 8:42 MP4 demonstrates the previous workflow and needs regeneration from fresh captures. Its narration source has been updated for immediate results and real API refresh. The video remains local at the candidate's request; no YouTube upload or form submission has been performed. See [the updated walkthrough script](docs/demo-script.md) and [video pipeline notes](demo/README.md).
+**Local video:** the updated version 2 demo is 8:02, with a 3:48 customer presentation and 4:14 technical review. It shows immediate results, real API retrieval, refresh, cache/fallback status, and the current tests. The video remains local as requested; no YouTube upload or form submission has been performed. See [the walkthrough script](docs/demo-script.md) and [video pipeline notes](demo/README.md).
 
-The preview image in `docs/replay-preview.png` belongs to the prior release and should be replaced with a capture of the refreshed interface.
+![Immediate forecast accuracy and actual generation with Elexon API refresh](docs/replay-preview.png)
 
 ## Run locally
 
@@ -124,7 +124,7 @@ npm run test
 npm run build
 ```
 
-The production frontend build includes TypeScript checks. Backend tests cover source retrieval and cache/failure semantics as well as forecast availability, missing observations, temporal alignment, metric definitions, date boundaries, and comparable revision cohorts. Frontend interaction tests cover immediate result visibility and refresh state. Run the commands to obtain current results; verification of this revision is not implied by the earlier release's test results.
+The production frontend build includes TypeScript checks. All 37 backend tests and 8 frontend interaction tests pass, including inside the Linux/GitHub checks. Tests cover real-request boundaries with mocked upstream responses, source cache/failure semantics, forecast availability, missing observations, temporal alignment, metric definitions, date boundaries, immediate result visibility, and atomic refresh updates. The running Docker app and public Vercel API were also checked against Elexon's actual responses; refresh advanced the retrieval timestamp while retaining 744 matched January delivery hours.
 
 The interactive API reference is available at `/docs`. Example requests:
 
@@ -151,6 +151,6 @@ After deployment, verify the root page, immediate actuals and metrics, `/health`
 
 ## AI assistance and time limit
 
-Developed with assistance from OpenAI Codex. AI assistance covered research, implementation, documentation, and verification. The previous local demo used macOS Daniel synthetic narration over real application captures and actual source excerpts. It must be regenerated to show the current immediate-results and API-refresh workflow. The work log distinguishes checks executed for the earlier release from validation still required for this revision.
+Developed with assistance from OpenAI Codex. AI assistance covered research, implementation, documentation, and verification. The updated local demo uses macOS Daniel synthetic narration over real application captures and actual source excerpts. Its content and timing were checked after regenerating it for the immediate-results and API-refresh workflow. The work log records the checks for this revision.
 
-The assignment sets a maximum of 16 hours. The implementation remains a January 2026 historical pilot; [the work log](docs/work-log.md) records the development session and remaining checks. The video stays local and the form remains unsubmitted at the candidate's request. Future submission requirements are listed in [docs/submission-checklist.md](docs/submission-checklist.md); contact details, LinkedIn, and resume links are not stored in this public repository.
+The assignment sets a maximum of 16 hours. The implementation remains a January 2026 historical pilot; [the work log](docs/work-log.md) records the development session and verification. The video stays local as requested. Final submission awaits the required YouTube and personal profile/resume links. These steps are listed in [docs/submission-checklist.md](docs/submission-checklist.md); contact details are not stored in this public repository.
