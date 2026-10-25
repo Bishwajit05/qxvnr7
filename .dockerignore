@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.vercel
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+frontend/dist
+data/raw
+data/*.build.sqlite
+docs
+*.log
+.env
+.env.*
+!.env.example

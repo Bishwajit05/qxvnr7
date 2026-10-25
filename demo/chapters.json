@@ -1,0 +1,86 @@
+[
+  {
+    "id": "01-introduction",
+    "part": 1,
+    "title": "A decision you can replay",
+    "subtitle": "Customer presentation · What was knowable before the buying decision?",
+    "visual": "01-overview.png",
+    "narration": "Welcome to Wind Decision Replay. This pilot helps an electricity buying team understand the wind forecast that was available when a next day purchasing decision had to be made, and then assess how that forecast performed. The starting point is a real historical decision, the fifteenth of January twenty twenty six, at nine in the morning, for delivery on the sixteenth. The application deliberately separates the information available before the decision from the outcome observed afterward. This walkthrough uses screenshots captured from the running application, with synthetic narration. We will first explore the customer workflow, and then review the implementation and its checks."
+  },
+  {
+    "id": "02-available-information",
+    "part": 1,
+    "title": "Freeze the information clock",
+    "subtitle": "Customer presentation · Forecast publications available by the selected cutoff",
+    "visual": "06-chart.png",
+    "narration": "The controls specify a decision date and a cutoff in London time. Nine o'clock is a configurable demonstration assumption, rather than a claim that every market participant has the same deadline. The publication timeline lets a reviewer move back to an earlier checkpoint. For each delivery hour, the backend selects the latest forecast published by that checkpoint. An update released later cannot silently improve the earlier decision. For this case, the latest eligible publication is seven thirty, with the previous revision at four thirty. Earlier publications may cover fewer next day hours, and the application reports that difference. Before revealing the outcome, the forecast view answers a simple question: what wind generation could the buyer actually have expected, using the information recorded as published at the time?"
+  },
+  {
+    "id": "03-reveal-outcome",
+    "part": 1,
+    "title": "Reveal what happened next",
+    "subtitle": "Customer presentation · Forecast and actual generation on the same hourly basis",
+    "visual": "02-outcome.png",
+    "visual_alt": "03-explain.png",
+    "switch_fraction": 0.38,
+    "narration": "Revealing the outcome adds the recorded actual generation and the error measures. The actual line is clearly retrospective; it was not information available to the buyer the previous morning. The forecast is hourly, while the source actuals are half hourly. Two complete half hours are averaged to make a comparable hourly observation. For the midnight delivery hour, the selected forecast was seven thousand three hundred and ninety eight megawatts. The actual hourly average was seven thousand three hundred and thirty five point five, giving a positive error of sixty two point five megawatts. The sign matters. Positive means wind was overforecast. This is an electricity generation mismatch, not a calculation of the client's purchasing requirement, because the permitted data contains neither customer demand nor their contracted portfolio."
+  },
+  {
+    "id": "04-revision-evidence",
+    "part": 1,
+    "title": "Did the newer update help?",
+    "subtitle": "Customer presentation · Same delivery hours, different forecast revisions",
+    "visual": "07-metrics.png",
+    "narration": "The important finding is that a newer forecast does not automatically improve every error measure. On these twenty four complete hours, the latest forecast's mean absolute error was seven hundred and eighty two point seven five megawatts. The previous forecast's was seven hundred and thirty six point two nine. That is six point three percent higher error for the newer update. It improved eight hours and worsened sixteen. Yet its positive overforecast energy was lower: about thirteen thousand six hundred and seventeen megawatt hours, compared with fourteen thousand five hundred and forty eight. These measures describe different aspects of the miss. The explanation view exposes the comparison and its sample size, so the reviewer can inspect the evidence. This single case does not establish that older forecasts are generally better, or that forecast revision size predicts future uncertainty."
+  },
+  {
+    "id": "05-january-context",
+    "part": 1,
+    "title": "Put one decision in context",
+    "subtitle": "Customer presentation · A consistent January backtest with visible data coverage",
+    "visual": "04-month.png",
+    "visual_alt": "05-partial.png",
+    "switch_fraction": 0.68,
+    "narration": "The January view applies the same cutoff policy to every decision day. At nine in the morning, all seven hundred and forty four delivery hours have complete comparisons. The latest revision had lower daily mean absolute error on sixteen of thirty one comparable days. Month wide mean absolute error was about two thousand and thirty nine megawatts, root mean squared error about two thousand five hundred and five, and signed bias positive one thousand seven hundred and forty eight. The aggregate is calculated from the individual hourly errors. It is not an unweighted average of daily scores. Coverage remains part of the result. At a midnight cutoff, some forecasts do not yet cover the entire delivery day. Those missing hours stay unavailable. The product gives the team a traceable view of forecast performance, without pretending to supply demand forecasts, trading profit, or a calibrated confidence score."
+  },
+  {
+    "id": "06-architecture",
+    "part": 2,
+    "title": "Small architecture, explicit responsibilities",
+    "subtitle": "Technical review · React, FastAPI, SQLite, and a reproducible import",
+    "visual": "architecture",
+    "narration": "For the technical review, the architecture has four responsibilities. An offline Python importer retrieves the two permitted Elexon datasets. A read only SQLite snapshot stores forecast revisions and normalized actuals. FastAPI performs the as of selection and all accuracy calculations. A React and TypeScript frontend renders the controls, charts, evidence, and data coverage. The frontend does not independently recalculate the statistics. Docker builds the React assets and packages them with the Python application and snapshot. Keeping this historical data in the release makes the demonstration reproducible and independent of an external API call on every page load. It also avoids introducing a separate database service for a fixed one month pilot."
+  },
+  {
+    "id": "07-import-provenance",
+    "part": 2,
+    "title": "Preserve revisions and provenance",
+    "subtitle": "Technical review · Historical publication windows and complete hourly actuals",
+    "visual": "importer",
+    "narration": "The importer queries wind forecasts by publication windows, rather than requesting only the latest available forecast. It downloads daily windows with timeouts, retries, and a resumable local cache. Forecast records are keyed by target time and publication time, so earlier revisions remain available. Actual generation is filtered to wind and retains its original half hour records. An hourly actual is created only when both component half hours exist. The completed snapshot contains seventeen thousand eight hundred and sixty four forecast revisions, one thousand four hundred and eighty eight half hour actuals, and seven hundred and forty four complete hourly actuals. Metadata records the source requests, retrieval timestamps, record counts, and checksums. January refers to decision dates, so delivery correctly extends from the second of January through the first of February."
+  },
+  {
+    "id": "08-selection-and-metrics",
+    "part": 2,
+    "title": "Make the analysis auditable",
+    "subtitle": "Technical review · No future publications and a shared revision comparison cohort",
+    "visual": "selection",
+    "narration": "The central rule is that a forecast publication must be at or before the selected decision checkpoint. Selection is performed independently for every target hour, because coverage can differ across publications. The previous forecast is the previous distinct eligible publication for that same target. Missing observations remain null, while a genuine zero remains a valid measurement. Headline accuracy uses every complete selected forecast and actual match. A revision comparison uses only hours where both revisions and the actual are present. This prevents a change in sample coverage from masquerading as an improvement. Mean absolute error describes typical error magnitude. Root mean squared error emphasizes large misses. Bias retains direction. Positive error energy sums only positive hourly errors, multiplied by one hour. Publication time is explicitly an availability proxy; the source cannot prove when a particular recipient received each update."
+  },
+  {
+    "id": "09-verification",
+    "part": 2,
+    "title": "Test the claims that matter",
+    "subtitle": "Technical review · Executed backend checks and a verified historical case",
+    "visual": "tests",
+    "narration": "The backend tests focus on the claims that would invalidate the analysis if they were wrong. They verify that future publications are excluded, a publication exactly at the cutoff is included, checkpoints rewind selection, and each target hour selects its own revisions. They distinguish missing values from zero, require both actual half hours, and check the formulas against a small hand calculated example. A partial coverage test verifies that revision changes use the common cohort rather than unrelated headline samples. Boundary checks carry the thirty first of January decision into the first of February delivery. The preserved historical case checks the seven hundred and eighty two point seven five megawatt result directly against the packaged snapshot. API checks also cover validation, source provenance, CSV output, and month wide aggregation."
+  },
+  {
+    "id": "10-delivery",
+    "part": 2,
+    "title": "A reviewable pilot",
+    "subtitle": "Technical review · Reproducible execution, stated assumptions, and source limits",
+    "visual": "delivery",
+    "narration": "The repository includes the application, the reproducible importer, the snapshot metadata, automated checks, and the Docker configuration. The README explains how to start the application, the directory structure, the analysis definitions, and the use of AI assistance, including this synthetic narration. The Python API exposes a decision replay, January accuracy, metadata, and a CSV matching the selected checkpoint. The same analysis code supports the local Docker application and the deployment adapter. The main deliberate tradeoff is a fixed historical snapshot, which fits the assignment's January scope. A production service would need operational refresh, monitoring, and the client's own demand and portfolio context. The pilot's contribution is specific: reconstruct what was knowable, reveal the outcome, and make every accuracy claim inspectable."
+  }
+]
